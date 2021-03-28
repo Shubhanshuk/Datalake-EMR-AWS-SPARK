@@ -4,6 +4,8 @@ import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col
 from pyspark.sql.functions import year, month, dayofmonth, hour, weekofyear, date_format
+from pyspark.sql.types import TimestampType, DateType
+
 
 config = configparser.ConfigParser()
 config.read('dl.cfg')
@@ -81,14 +83,13 @@ def process_log_data(spark, input_data, output_data):
     # get filepath to log data file
     log_data = input_data+'log_data/*/*/*.json'
 
-
     # read log data file
     df = spark.read.json(log_data, inferSchema=true)
-
 
     # filter by actions for song plays
     df = df.filter(df.page == 'NextSong')
 
+###Users Table
     # extract columns for users table
     users_table =["userdId as user_id", "firstName as first_name", "lastName as last_name", "gender", "level"]
 
@@ -99,18 +100,29 @@ def process_log_data(spark, input_data, output_data):
 ###Time Table
 
     # create timestamp column from original timestamp column
-    get_timestamp = udf()
-    df =
+    get_timestamp =  udf(date_convert, TimestampType())
+    df = df.withColumn("start_time", get_datetime('ts'))
 
     # create datetime column from original timestamp column
-    get_datetime = udf()
-    df =
+    get_datetime = udf(lambda x: to_date(x), TimestampType())
+    df = df.withColumn("start_time", get_timestamp(col("ts")))
+
+
+    df = df.withColumn("hour", hour("timestamp"))
+    df = df.withColumn("day", dayofmonth("timestamp"))
+    df = df.withColumn("month", month("timestamp"))
+    df = df.withColumn("year", year("timestamp"))
+    df = df.withColumn("week", weekofyear("timestamp"))
+    df = df.withColumn("weekday", dayofweek("timestamp"))
+
+    time_table = df.select(col("start_time"), col("hour"), col("day"), col("week"), \
+                           col("month"), col("year"), col("weekday")).distinct()
 
     # extract columns to create time table
     time_table =
 
     # write time table to parquet files partitioned by year and month
-    time_table
+    songs_table.write.partitionBy("year", "month").parquet(output_data + 'time/')
 
 
 
