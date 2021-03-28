@@ -13,6 +13,13 @@ os.environ['AWS_SECRET_ACCESS_KEY'] = config['AWS_SECRET_ACCESS_KEY']
 
 
 def create_spark_session():
+    '''
+
+    Create spark session object
+    return: spark session object
+    '''
+
+
     spark = SparkSession \
         .builder \
         .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:2.7.0") \
@@ -21,40 +28,75 @@ def create_spark_session():
 
 
 def process_song_data(spark, input_data, output_data):
+    """
+        Description: This function reads the data from S3 and extracts the following two tables:
+            1. song table
+            2. artist table
+
+        Parameters:
+            spark       : Spark Session from function (create_spark_session)
+            input_data  : S3 location of song_data  files with the songs metadata. Files are in json format
+            output_data : S3 bucket where dimensional tables are stored in parquet format
+    """
+
+
+
     # get filepath to song data file
-    song_data =
+    song_data =input_data + 'song_data/*/*/*.json'
+
+
 
     # read song data file
-    df =
+    df =spark.read.json(song_data ,  inferSchema=True)
+
+
 
     # extract columns to create songs table
-    songs_table =
+    songs_table =["title", "artist_id", "year", "duration"]
 
     # write songs table to parquet files partitioned by year and artist
-    songs_table
+    songs_table.write.partitionBy("year", "artist_id").parquet(output_data + 'songs/')
 
     # extract columns to create artists table
-    artists_table =
+    artists_table =["artist_id", "artist_name", "artist_location", "artist_latitude","artist_longitude"]
 
     # write artists table to parquet files
-    artists_table
+    artists_table.write.parquet(output_data + 'artists/')
 
 
 def process_log_data(spark, input_data, output_data):
+    """
+        Description: This function reads the data from S3 and extracts the following two tables:
+            1. users table
+            2. time table
+            3. songplay table
+
+        Parameters:
+            spark       : Spark Session from function (create_spark_session)
+            input_data  : S3 location of log data  files with the songs metadata. Files are in json format
+            output_data : S3 bucket where dimensional tables are stored in parquet format
+    """
+
+
     # get filepath to log data file
-    log_data =
+    log_data = input_data+'log_data/*/*/*.json'
+
 
     # read log data file
-    df =
+    df = spark.read.json(log_data, inferSchema=true)
+
 
     # filter by actions for song plays
-    df =
+    df = df.filter(df.page == 'NextSong')
 
     # extract columns for users table
-    artists_table =
+    users_table =["userdId as user_id", "firstName as first_name", "lastName as last_name", "gender", "level"]
 
     # write users table to parquet files
-    artists_table
+    users_table.write.parquet(output_data + 'users/')
+
+
+###Time Table
 
     # create timestamp column from original timestamp column
     get_timestamp = udf()
@@ -70,14 +112,45 @@ def process_log_data(spark, input_data, output_data):
     # write time table to parquet files partitioned by year and month
     time_table
 
+
+
+
+
+###SONGPLAYS
+
     # read in song data to use for songplays table
-    song_df =
+
+    songs_df = spark.read.parquet(output_data + 'songs/*/*/*')
+    artists_df = spark.read.parquet(output_data + 'artists/*')
+    songs_logs_df = df.join(songs_df, (df.song == songs_df.title))
+    artists_songs_logs_df = songs_logs_df.join(artists_df, (songs_logs_df.artist == artists_df.name))
+
 
     # extract columns from joined song and log datasets to create songplays table
-    songplays_table =
+
+    songplays_df = artists_songs_logs_df.join(
+        time_table,
+        artists_songs_logs_df.ts == time_table.start_time, 'left'
+    ).drop(artists_songs_logs_df.year)
 
     # write songplays table to parquet files partitioned by year and month
-    songplays_table
+
+    songplays_table = songplays_df.select(
+        col('start_time').alias('start_time'),
+        col('userId').alias('user_id'),
+        col('level').alias('level'),
+        col('song_id').alias('song_id'),
+        col('artist_id').alias('artist_id'),
+        col('sessionId').alias('session_id'),
+        col('location').alias('location'),
+        col('userAgent').alias('user_agent'),
+        col('year').alias('year'),
+        col('month').alias('month'),
+    ).repartition("year", "month")
+
+    songplays_table.write.partitionBy("year", "month").parquet(output_data + 'songplays/')
+
+
 
 
 def main():
